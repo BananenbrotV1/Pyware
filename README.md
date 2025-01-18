@@ -1,6 +1,7 @@
 Hey, um Pyware nutzen zu können, musst du noch Python (von Python.org) und ein paar Module installieren.
 Führe dazu einfach die installer.cmd aus.
-Da mach öffnet ihr ein cmd fenster und gibt ein "auto-py-to-exe" wählt dann oben die Pyware.py aus, dann must ihr in diesen fenster bei Additonal Files die grabber.py und die Admin.manifest datei auswählen. Denn Rest konnt ihr so ein stell wie ihr das wollt
+Da mach öffnet ihr ein cmd fenster und gibt ein "auto-py-to-exe" wählt dann oben die Pyware.py aus, dann must ihr in diesen fenster bei Additonal Files die grabber.py und die Admin.manifest datei auswählen. Denn Rest konnt ihr so ein stell wie ihr das wollt. 
+oder öfnet die Setup.exe
 
 Viel Spaß! :
 
